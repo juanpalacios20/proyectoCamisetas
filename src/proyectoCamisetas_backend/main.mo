@@ -30,9 +30,28 @@ actor {
     return null;
   };
 
+  //metodo para encontrar la camiseta y ahorrar lineas de codigo
+  func encontrarCamiseta(camisetaId : Nat) : ?Types.Camisetas {
+    for (camiseta in camisetas.vals()) {
+      if (camiseta.id == camisetaId) {
+        return ?camiseta;
+      };
+    };
+    return null;
+  };
+
+  func encontrarRecompensas(recompensaId : Nat) : ?Types.Recompensas {
+    for (recompensa in recompensas.vals()) {
+      if (recompensa.id == recompensaId) {
+        return ?recompensa;
+      };
+    };
+    return null;
+  };
+
   // Función para actualizar un usuario
   func actualizarUsuario(usuario : Types.Usuario) {
-    usuarios := Array.filter <Types.Usuario> (usuarios, func(u) { u.id != usuario.id });
+    usuarios := Array.filter<Types.Usuario>(usuarios, func(u) { u.id != usuario.id });
     usuarios := Array.append(usuarios, [usuario]);
   };
 
@@ -111,7 +130,7 @@ actor {
 
   //metodo para agregar una nueva camiseta, edición es la temporada a la que pertenece la camiseta
   //por ejemplo HOME-2024 o si es una edición retro, especial, etc.
-  public func m4_agregar_camiseta(c_equipo : Text, c_talla : Text, c_edicion : Text, c_precio : Float, c_existencias : Nat) : async Result.Result<Text, Text> {
+  public func m4_agregar_camiseta(c_equipo : Text, c_talla : Text, c_edicion : Text, c_precio : Float, c_existencias : Float) : async Result.Result<Text, Text> {
     let c_id = nextCamisetaId;
     let nueva_camiseta : Types.Camisetas = {
       var id = c_id;
@@ -143,37 +162,31 @@ actor {
   public query func m3_camisetasExistentes() : async Text {
     var mensaje : Text = "";
     for (camiseta in camisetas.vals()) {
-      var informacion = "Id: " # Nat.toText(camiseta.id) # " Equipo: " # camiseta.equipo # " , Talla: " # camiseta.talla # " , Edición: " # camiseta.edicion # " , Precio: " # Float.toText(camiseta.precio) # " , Existencias: " # Nat.toText(camiseta.existencias) # " - ";
+      var informacion = "Id: " # Nat.toText(camiseta.id) # " Equipo: " # camiseta.equipo # " , Talla: " # camiseta.talla # " , Edición: " # camiseta.edicion # " , Precio: " # Float.toText(camiseta.precio) # " , Existencias: " # Float.toText(camiseta.existencias) # " - ";
       mensaje := mensaje # "  " # informacion;
     };
     return mensaje;
   };
 
   //metodo para realizar la venta de la camiseta
-  public func m5_realizarVenta(usuarioId : Principal, camisetaId : Nat) : async Result.Result<Text, Text> {
+  public func m5_realizarVenta(usuarioId : Principal, camisetaId : Nat, cantidadCamisetas : Float) : async Result.Result<Text, Text> {
     let usuarioOpt = encontrarUsuario(usuarioId);
-    var camisetaOpt : ?Types.Camisetas = null;
-
-    for (camiseta in camisetas.vals()) {
-      if (camiseta.id == camisetaId) {
-        camisetaOpt := ?camiseta;
-      };
-    };
+    var camisetaOpt = encontrarCamiseta(camisetaId);
 
     switch (usuarioOpt, camisetaOpt) {
       case (?usuario, ?camiseta) {
         if (usuario.wallet.saldo >= camiseta.precio and camiseta.existencias > 0) {
-          usuario.wallet.saldo -= camiseta.precio;
-          camiseta.existencias := camiseta.existencias - 1;
+          usuario.wallet.saldo -= (camiseta.precio * cantidadCamisetas);
+          camiseta.existencias := camiseta.existencias - cantidadCamisetas;
           usuario.compras := Array.append(usuario.compras, [camiseta]);
 
-          let tokensGanados = calcularLoyaltyTokens(camiseta.precio);
+          let tokensGanados = calcularLoyaltyTokens(camiseta.precio * cantidadCamisetas);
           usuario.loyaltyTokens += tokensGanados;
 
           actualizarUsuario(usuario);
           return #ok("Compra realizada con éxito, " # "Nuevo saldo: " # Float.toText(usuario.wallet.saldo));
         } else {
-          return #err("Saldo insuficiente o sin existencias, " # "Su saldo es: " # Float.toText(usuario.wallet.saldo) # " Las existencias son: " # Nat.toText(camiseta.existencias));
+          return #err("Saldo insuficiente o sin existencias, " # "Su saldo es: " # Float.toText(usuario.wallet.saldo) # " Las existencias son: " # Float.toText(camiseta.existencias));
         };
       };
       case _ {
@@ -184,15 +197,9 @@ actor {
 
   //metodo para devolver una camiseta ya comprada, regresa el dinero a la wallet, la camiseta a la lista
   //y descuenta los tokens
-  public func m6_devolverCamiseta(usuarioId : Principal, camisetaId : Nat) : async Result.Result<Text, Text> {
+  public func m6_devolverCamiseta(usuarioId : Principal, camisetaId : Nat, cantidadDevuelta : Float) : async Result.Result<Text, Text> {
     let usuarioOpt = encontrarUsuario(usuarioId);
-    var camisetaOpt : ?Types.Camisetas = null;
-
-    for (camiseta in camisetas.vals()) {
-      if (camiseta.id == camisetaId) {
-        camisetaOpt := ?camiseta;
-      };
-    };
+    var camisetaOpt = encontrarCamiseta(camisetaId);
 
     switch (usuarioOpt, camisetaOpt) {
       case (?usuario, ?camiseta) {
@@ -200,10 +207,10 @@ actor {
         switch (indexOpt) {
           case (?index) {
             usuario.compras := Array.filter<Types.Camisetas>(usuario.compras, func(c) { c.id != camisetaId });
-            usuario.wallet.saldo += camiseta.precio;
-            camiseta.existencias := camiseta.existencias + 1;
+            usuario.wallet.saldo += (camiseta.precio * cantidadDevuelta);
+            camiseta.existencias := camiseta.existencias + cantidadDevuelta;
 
-            let tokensRestados = calcularLoyaltyTokens(camiseta.precio);
+            let tokensRestados = calcularLoyaltyTokens(camiseta.precio * cantidadDevuelta);
             usuario.loyaltyTokens -= tokensRestados;
 
             actualizarUsuario(usuario);
@@ -233,13 +240,7 @@ actor {
   //metodo que permite reclamar la recompensa
   public func m5_Recompensa(usuarioId : Principal, id : Nat) : async Result.Result<Text, Text> {
     let usuarioOpt = encontrarUsuario(usuarioId);
-    var recompensaOpt : ?Types.Recompensas = null;
-
-    for (recompensa in recompensas.vals()) {
-      if (recompensa.id == id) {
-        recompensaOpt := ?recompensa;
-      };
-    };
+    var recompensaOpt = encontrarRecompensas(id);
 
     switch (usuarioOpt, recompensaOpt) {
       case (?usuario, ?recompensa) {
@@ -259,4 +260,19 @@ actor {
       };
     };
   };
+
+  //función para sacar una camiseta del mercado
+  public func m6_eliminarCamiseta(camisetaId : Nat) : async Result.Result<Text, Text> {
+    var camisetaOpt = encontrarCamiseta(camisetaId);
+    switch (camisetaOpt) {
+      case (?camiseta) {
+        camisetas := Array.filter<Types.Camisetas>(camisetas, func(c) { c.id != camisetaId });
+        return #ok("Camiseta eliminada");
+      };
+      case null {
+        return #err("Camiseta no encontrada");
+      };
+    };
+  };
+
 };

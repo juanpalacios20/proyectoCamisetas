@@ -9,7 +9,7 @@ module {
         var talla : Text;
         var edicion : Text;
         var precio : Float;
-        var existencias : Nat;
+        var existencias : Float;
     };
     public type Wallet = {
         var saldo : Float;
